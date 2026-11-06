@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BatchManager Pro</title>
+  <style>
+    :root {
+      --bg: #08080d;
+      --panel: #13131f;
+      --violet: #7c3aed;
+      --violet-light: #8b5cf6;
+      --text: #f4f4f5;
+      --muted: #9ca3af;
+      --border: rgba(124,58,237,.28);
+      --glow: rgba(124,58,237,.4);
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 15% -10%, rgba(124,58,237,.15), transparent 60%),
+                  radial-gradient(circle at 95% 100%, rgba(139,92,246,.1), transparent 60%);
+    }
+    .login-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 0 50px -10px var(--glow);
+    }
+    .logo-area {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo-area h1 {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(120deg, #fff, var(--violet-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    .logo-area p { color: var(--muted); font-size: 14px; }
+
+    /* Switch Toggle */
+    .switch-container {
+      display: flex;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .switch-btn {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+      position: relative;
+      z-index: 2;
+    }
+    .switch-btn.active { color: #fff; }
+    .switch-slider {
+      position: absolute;
+      top: 4px; left: 4px;
+      width: calc(50% - 4px);
+      height: calc(100% - 8px);
+      background: linear-gradient(135deg, var(--violet), var(--violet-light));
+      border-radius: 8px;
+      transition: transform 0.3s ease;
+      z-index: 1;
+    }
+    .switch-container.student .switch-slider { transform: translateX(100%); }
+
+    /* Form */
+    .input-group { margin-bottom: 20px; }
+    .input-group label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    .custom-select-wrapper { position: relative; }
+    .custom-select-wrapper select {
+      width: 100%;
+      padding: 14px;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+      appearance: none;
+      cursor: pointer;
+    }
+    .custom-select-wrapper select:focus { border-color: var(--violet-light); }
+    .select-icon {
+      position: absolute;
+      right: 16px; top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: var(--muted);
+    }
+    .input-group input {
+      width: 100%;
+      padding: 14px;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .input-group input:focus { border-color: var(--violet-light); }
+
+    .btn-submit {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--violet), var(--violet-light));
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: transform 0.2s;
+    }
+    .btn-submit:hover { transform: translateY(-2px); }
+    
+    .error-msg {
+      color: var(--red);
+      font-size: 13px;
+      text-align: center;
+      margin-top: 15px;
+      display: none;
+    }
+
+    /* Student Panel placeholder */
+    #student-panel { display: none; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+  <div class="login-card">
+    <div class="logo-area">
+      <h1>BatchManager Pro</h1>
+      <p>Select your center to continue</p>
+    </div>
+
+    <div class="switch-container" id="toggleSwitch">
+      <div class="switch-slider"></div>
+      <div class="switch-btn active" onclick="switchPanel('admin')">Admin Panel</div>
+      <div class="switch-btn" onclick="switchPanel('student')">Student Panel</div>
+    </div>
+
+    <!-- Admin Login Form -->
+    <div id="admin-panel">
+      <form id="loginForm">
+        <div class="input-group">
+          <label>Coaching Center</label>
+          <div class="custom-select-wrapper">
+            <select id="centerDropdown" required>
+              <option value="" disabled selected>Loading centers...</option>
+            </select>
+            <div class="select-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Master Password</label>
+          <input type="password" id="passwordInput" placeholder="Enter your password" required>
+        </div>
+
+        <button type="submit" class="btn-submit" id="loginBtn">Login to Dashboard</button>
+        <div class="error-msg" id="errorMsg"></div>
+      </form>
+    </div>
+
+    <!-- Student Panel (Placeholder for now) -->
+    <div id="student-panel">
+      <p>Student login coming soon...</p>
+    </div>
+
+  </div>
+
+  <script>
+    // Toggle UI between Admin and Student
+    function switchPanel(type) {
+      const container = document.getElementById('toggleSwitch');
+      const buttons = container.querySelectorAll('.switch-btn');
+      const adminPanel = document.getElementById('admin-panel');
+      const studentPanel = document.getElementById('student-panel');
+
+      if (type === 'admin') {
+        container.classList.remove('student');
+        buttons[0].classList.add('active');
+        buttons[1].classList.remove('active');
+        adminPanel.style.display = 'block';
+        studentPanel.style.display = 'none';
+      } else {
+        container.classList.add('student');
+        buttons[1].classList.add('active');
+        buttons[0].classList.remove('active');
+        adminPanel.style.display = 'none';
+        studentPanel.style.display = 'block';
+      }
+    }
+
+    // Fetch centers for the dropdown from the backend
+    async function loadCenters() {
+      try {
+        const response = await fetch('/api/centers');
+        const data = await response.json();
+        
+        const dropdown = document.getElementById('centerDropdown');
+        dropdown.innerHTML = '<option value="" disabled selected>Select a coaching center</option>';
+        
+        data.centers.forEach(center => {
+          const option = document.createElement('option');
+          option.value = center.center_id;
+          
+          // If they have a logo URL, we can format the option slightly, 
+          // but native select dropdowns don't support images. 
+          // So we just show the name for now.
+          option.textContent = center.center_name;
+          dropdown.appendChild(option);
+        });
+      } catch (err) {
+        document.getElementById('centerDropdown').innerHTML = '<option value="">Error loading centers</option>';
+      }
+    }
+
+    // Submit login form
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const center_id = document.getElementById('centerDropdown').value;
+      const password = document.getElementById('passwordInput').value;
+      const errorMsg = document.getElementById('errorMsg');
+      const loginBtn = document.getElementById('loginBtn');
+
+      errorMsg.style.display = 'none';
+      loginBtn.textContent = 'Logging in...';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ center_id, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Save token and redirect to dashboard (we will build dashboard later)
+          localStorage.setItem('bm_token', data.token);
+          localStorage.setItem('bm_center_name', data.center_name);
+          alert('Login successful! Welcome to ' + data.center_name + '.\n(Dashboard coming next)');
+        } else {
+          errorMsg.textContent = data.error || 'Login failed';
+          errorMsg.style.display = 'block';
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Server error. Please try again.';
+        errorMsg.style.display = 'block';
+      } finally {
+        loginBtn.textContent = 'Login to Dashboard';
+      }
+    });
+
+    // Load centers when page opens
+    loadCenters();
+  </script>
+</body>
+</html>
