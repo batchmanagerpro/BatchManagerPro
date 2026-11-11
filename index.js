@@ -20,6 +20,34 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
+async function ensureTabs(sheets, spreadsheetId) {
+  const wanted = {
+    Batches:    ['batch_id', 'name', 'type', 'fee', 'deadline_day', 'cycle_length', 'created_at', 'active'],
+    Students:   ['student_id', 'batch_id', 'name', 'school', 'guardian_phone', 'address', 'joined_at', 'active'],
+    Attendance: ['att_id', 'batch_id', 'student_id', 'class_date', 'status', 'marked_at'],
+    Classes:    ['class_id', 'batch_id', 'class_date', 'held'],
+    Ledger:     ['entry_id', 'student_id', 'batch_id', 'date', 'type', 'amount', 'lectures_counted', 'note']
+  };
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const existingTabs = meta.data.sheets.map(s => s.properties.title);
+
+  for (const tabName of Object.keys(wanted)) {
+    if (!existingTabs.includes(tabName)) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] }
+      });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tabName}!A1`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [wanted[tabName]] }
+      });
+    }
+  }
+}
+
 // ============================================================
 // Auth Middleware
 // ============================================================
@@ -30,7 +58,7 @@ function authenticateToken(req, res, next) {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
-    req.user = user; // contains center_name and sheet_id
+    req.user = user;
     next();
   });
 }
@@ -52,7 +80,6 @@ app.post('/api/login', async (req, res) => {
     if (!center) return res.status(401).json({ error: 'Email not found' });
     if (password !== center[3]) return res.status(401).json({ error: 'Incorrect password' });
     
-    // Check expiry
     const expireDate = center[5];
     if (expireDate) {
       const parts = expireDate.split('/');
@@ -79,6 +106,8 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/batches', authenticateToken, async (req, res) => {
   try {
     const sheets = await getSheetsClient();
+    await ensureTabs(sheets, req.user.sheet_id);
+
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: req.user.sheet_id,
       range: 'Batches!A2:H',
@@ -91,6 +120,31 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
     res.json({ batches });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load batches' });
+  }
+});
+
+app.post('/api/batches', authenticateToken, async (req, res) => {
+  const { name, type, fee, deadline_day, cycle_length } = req.body;
+  try {
+    const generatedId = 'b_' + Math.random().toString(36).substring(2, 8);
+    const sheets = await getSheetsClient();
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: req.user.sheet_id,
+      range: 'Batches!A2:H',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          generatedId, name, type, fee, 
+          type === 'monthly' ? deadline_day : '', 
+          type !== 'monthly' ? cycle_length : '', 
+          new Date().toISOString().split('T')[0], 'TRUE'
+        ]]
+      }
+    });
+    res.json({ success: true, batch_id: generatedId });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create batch' });
   }
 });
 
@@ -118,8 +172,8 @@ app.post('/api/students', authenticateToken, async (req, res) => {
   const { batch_id, name, school, phone, address } = req.body;
   try {
     const generatedId = 'STU-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-    
     const sheets = await getSheetsClient();
+    
     await sheets.spreadsheets.values.append({
       spreadsheetId: req.user.sheet_id,
       range: 'Students!A2:H',
