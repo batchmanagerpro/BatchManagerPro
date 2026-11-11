@@ -17,53 +17,63 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-app.get('/api/centers', async (req, res) => {
-  try {
-    const sheets = await getSheetsClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: process.env.MASTER_SHEET_ID,
-      range: 'Centers!A2:F',
-    });
-    const rows = response.data.values || [];
-    const centers = rows.map(row => ({
-      center_id: row[0],
-      center_name: row[1],
-      logo: row[5] || '' 
-    })).filter(c => c.center_id && c.center_name);
-    res.json({ centers });
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Failed to load centers' });
-  }
-});
-
 app.post('/api/login', async (req, res) => {
-  const { center_id, password } = req.body;
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' });
+  }
+
   try {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.MASTER_SHEET_ID,
-      range: 'Centers!A2:E',
+      range: 'Centers!A2:F', // Read A to F
     });
+
     const rows = response.data.values || [];
-    const center = rows.find(row => row[0] === center_id);
-    if (!center) return res.status(401).json({ error: 'Center not found' });
     
-    if (password !== center[2]) return res.status(401).json({ error: 'Incorrect password' });
-    
-    const expireDate = center[4];
+    // Find the center by email (Column C, which is index 2)
+    const center = rows.find(row => 
+      row[2] && row[2].toString().toLowerCase().trim() === email.toLowerCase().trim()
+    );
+
+    if (!center) {
+      return res.status(401).json({ error: 'Email not found' });
+    }
+
+    const storedPassword = center[3]; // Column D (Master-Password)
+    const expireDate = center[5];     // Column F (Subscription-Expire)
+    const centerName = center[1];     // Column B (Center-Name)
+
+    if (password !== storedPassword) {
+      return res.status(401).json({ error: 'Incorrect password' });
+    }
+
+    // Check subscription expiry
     if (expireDate) {
       const parts = expireDate.split('/');
       if (parts.length === 3) {
         const expiry = new Date(parts[2], parts[1] - 1, parts[0]);
-        if (expiry < new Date()) return res.status(403).json({ error: 'Subscription expired' });
+        const today = new Date();
+        if (expiry < today) {
+          return res.status(403).json({ error: 'Subscription expired. Contact support.' });
+        }
       }
     }
 
-    const token = jwt.sign({ center_id: center[0], sheet_id: center[3] }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    res.json({ success: true, token, center_name: center[1] });
+    // Create token
+    const token = jwt.sign(
+      { email: email, center_name: centerName },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ success: true, token, center_name: centerName });
+
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error("Login Error:", err);
+    res.status(500).json({ error: 'Server error during login' });
   }
 });
 
