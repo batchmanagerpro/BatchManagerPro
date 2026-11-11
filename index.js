@@ -8,7 +8,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- Google Sheets Auth ---
+// ============================================================
+// Google Sheets Auth
+// ============================================================
 async function getSheetsClient() {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   const auth = new google.auth.GoogleAuth({
@@ -18,7 +20,9 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-// --- Auth Middleware ---
+// ============================================================
+// Auth Middleware
+// ============================================================
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -26,12 +30,14 @@ function authenticateToken(req, res, next) {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
-    req.user = user; // Contains center_name and sheet_id
+    req.user = user; // contains center_name and sheet_id
     next();
   });
 }
 
-// --- 1. Login ---
+// ============================================================
+// 1. Login
+// ============================================================
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -57,7 +63,7 @@ app.post('/api/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { center_name: center[1], sheet_id: center[4] }, // Column E is Sheet ID
+      { center_name: center[1], sheet_id: center[4] },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -67,13 +73,15 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// --- 2. Get Batches ---
+// ============================================================
+// 2. Batches
+// ============================================================
 app.get('/api/batches', authenticateToken, async (req, res) => {
   try {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: req.user.sheet_id,
-      range: 'Batches!A2:H', // batch_id, name, type, fee, deadline_day, cycle_length, created_at, active
+      range: 'Batches!A2:H',
     });
     const rows = response.data.values || [];
     const batches = rows.filter(r => r[7] !== 'FALSE').map(r => ({
@@ -86,7 +94,9 @@ app.get('/api/batches', authenticateToken, async (req, res) => {
   }
 });
 
-// --- 3. Get Students for a Batch ---
+// ============================================================
+// 3. Students
+// ============================================================
 app.get('/api/batches/:batchId/students', authenticateToken, async (req, res) => {
   try {
     const sheets = await getSheetsClient();
@@ -104,11 +114,9 @@ app.get('/api/batches/:batchId/students', authenticateToken, async (req, res) =>
   }
 });
 
-// --- 4. Add Student (Generates ID) ---
 app.post('/api/students', authenticateToken, async (req, res) => {
   const { batch_id, name, school, phone, address } = req.body;
   try {
-    // Generate a unique 6-char ID like STU-8F4K9
     const generatedId = 'STU-' + Math.random().toString(36).substring(2, 7).toUpperCase();
     
     const sheets = await getSheetsClient();
@@ -128,6 +136,87 @@ app.post('/api/students', authenticateToken, async (req, res) => {
   }
 });
 
+// ============================================================
+// 4. Attendance
+// ============================================================
+app.get('/api/attendance/:batchId', authenticateToken, async (req, res) => {
+  try {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: req.user.sheet_id,
+      range: 'Attendance!A2:F',
+    });
+    const rows = response.data.values || [];
+    const records = rows.filter(r => r[1] === req.params.batchId);
+    res.json({ records });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load attendance' });
+  }
+});
+
+app.post('/api/attendance', authenticateToken, async (req, res) => {
+  const { batch_id, student_id, class_date, status } = req.body;
+  try {
+    const generatedId = 'a_' + Math.random().toString(36).substring(2, 8);
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: req.user.sheet_id,
+      range: 'Attendance!A2:F',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          generatedId, batch_id, student_id, class_date, status, new Date().toISOString()
+        ]]
+      }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save attendance' });
+  }
+});
+
+// ============================================================
+// 5. Payments / Dues
+// ============================================================
+app.get('/api/payments/:batchId', authenticateToken, async (req, res) => {
+  try {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: req.user.sheet_id,
+      range: 'Ledger!A2:H',
+    });
+    const rows = response.data.values || [];
+    const payments = rows.filter(r => r[2] === req.params.batchId);
+    res.json({ payments });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load payments' });
+  }
+});
+
+app.post('/api/payments', authenticateToken, async (req, res) => {
+  const { student_id, batch_id, amount, type, note } = req.body;
+  try {
+    const generatedId = 'l_' + Math.random().toString(36).substring(2, 8);
+    const sheets = await getSheetsClient();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: req.user.sheet_id,
+      range: 'Ledger!A2:H',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [[
+          generatedId, student_id, batch_id, new Date().toISOString().split('T')[0], type, amount, '', note || ''
+        ]]
+      }
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to record payment' });
+  }
+});
+
+// ============================================================
+// Server Start
+// ============================================================
 app.get('/', (req, res) => res.send('API is running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server on port ${PORT}`));
